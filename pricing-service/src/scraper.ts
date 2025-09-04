@@ -10,8 +10,8 @@ export class AmazonMusicScraper {
   private maxRetries: number;
 
   constructor(options: { headless?: boolean; delay?: number; maxRetries?: number } = {}) {
-    this.headless = options.headless ?? true;
-    this.delay = options.delay ?? 2000;
+    this.headless = options.headless ?? true; // Back to headless for performance
+    this.delay = options.delay ?? 3000;
     this.maxRetries = options.maxRetries ?? 3;
   }
 
@@ -92,49 +92,158 @@ export class AmazonMusicScraper {
     console.log(`🔍 Searching for: ${result.searchQuery}`);
 
     try {
-      // Navigate to Amazon Digital Music search
-      const searchQuery = encodeURIComponent(`${result.searchQuery} mp3`);
-      const searchUrl = `https://www.amazon.com/s?k=${searchQuery}&i=digital-music&rh=n%3A163856011,p_n_format_browse-bin%3A625007011`;
+      // Navigate to Amazon Digital Music search - try MP3 downloads specifically
+      let searchQuery = encodeURIComponent(`${result.searchQuery}`);
+      let searchUrl = `https://www.amazon.com/s?k=${searchQuery}&i=digital-music&rh=n%3A163856011`;
+      
+      console.log(`  🔍 Trying main digital music search first...`);
       
       await this.page.goto(searchUrl, { waitUntil: 'networkidle' });
       await this.page.waitForTimeout(this.delay);
+      
+      // Check if we got good results, if not try alternative approaches
+      let hasGoodResults = false;
+      try {
+        const resultCount = await this.page.locator('[data-component-type="s-search-result"]').count();
+        console.log(`  📊 Found ${resultCount} results with main search`);
+        if (resultCount < 3) {
+          // Try alternative search - look for MP3 purchases specifically on MP3 store
+          console.log(`  🔄 Trying MP3 store search...`);
+          searchQuery = encodeURIComponent(`${item.artist} ${item.song}`);
+          searchUrl = `https://www.amazon.com/s?k=${searchQuery}&i=digital-music&rh=n%3A163856011`; // MP3 Downloads category
+          await this.page.goto(searchUrl, { waitUntil: 'networkidle' });
+          await this.page.waitForTimeout(this.delay);
+        } else {
+          hasGoodResults = true;
+        }
+      } catch (e) {
+        console.log(`  ⚠️ Error checking results, continuing with current page...`);
+      }
 
-      // Look for search results
-      const results = await this.page.locator('[data-component-type="s-search-result"]').all();
+      // Debug: Take a screenshot to see what we're getting
+      await this.page.screenshot({ path: `debug-search-${Date.now()}.png` });
+      
+      // Debug: Log the page title and URL
+      console.log(`  🌐 Page URL: ${this.page.url()}`);
+      console.log(`  📄 Page title: ${await this.page.title()}`);
+      
+      // Try multiple selector patterns for search results
+      const resultSelectors = [
+        '[data-component-type="s-search-result"]',
+        '[data-testid="result-info-container"]',
+        '.s-result-item',
+        '[data-cy="title-recipe"]',
+        '.s-widget-container'
+      ];
+      
+      let results: any[] = [];
+      let workingSelector = '';
+      
+      for (const selector of resultSelectors) {
+        const elements = await this.page.locator(selector).all();
+        console.log(`  🔍 Selector "${selector}": found ${elements.length} elements`);
+        if (elements.length > 0) {
+          results = elements;
+          workingSelector = selector;
+          break;
+        }
+      }
       
       if (results.length === 0) {
-        result.error = 'No search results found';
+        // Debug: Get page content to see what's available
+        const bodyText = await this.page.locator('body').textContent();
+        console.log(`  📝 Page contains text: ${bodyText?.substring(0, 500)}...`);
+        
+        result.error = 'No search results found with any selector pattern';
         return result;
       }
+      
+      console.log(`  ✅ Using selector: ${workingSelector} (${results.length} results)`)
 
       // Check first few results for MP3 tracks
       for (let i = 0; i < Math.min(results.length, 5); i++) {
         const resultElement = results[i];
         
-        // Get the title
-        const titleElement = resultElement.locator('h2 a span');
-        const title = await titleElement.textContent() || '';
+        // Try multiple patterns for getting the title
+        const titleSelectors = [
+          'h2 a span',
+          'h2 span',
+          'h2 a',
+          '[data-cy="title-recipe"]',
+          '.s-size-mini',
+          '.a-size-base-plus',
+          'a[href*="/dp/"] span'
+        ];
+        
+        let title = '';
+        for (const titleSelector of titleSelectors) {
+          try {
+            const titleElement = resultElement.locator(titleSelector).first();
+            title = await titleElement.textContent({ timeout: 1000 }) || '';
+            if (title.trim()) {
+              console.log(`  📋 Found title with "${titleSelector}": ${title}`);
+              break;
+            }
+          } catch (e) {
+            // Continue to next selector
+          }
+        }
+        
+        if (!title.trim()) {
+          // Get all text content as fallback
+          title = await resultElement.textContent() || '';
+          console.log(`  📋 Fallback - full element text: ${title.substring(0, 100)}...`);
+        }
         
         console.log(`  📋 Checking result ${i + 1}: ${title}`);
 
-        // Verify this is the right track and is MP3/music related
+        // Verify this is the right track and is actual music (not merchandise)
         const titleLower = title.toLowerCase();
         const songMatch = titleLower.includes(item.song.toLowerCase());
         const artistMatch = titleLower.includes(item.artist.toLowerCase());
-        const isMusicFormat = titleLower.includes('mp3') || 
-                             titleLower.includes('music') || 
-                             titleLower.includes('single') ||
-                             titleLower.includes('digital');
+        
+        // Skip obvious non-music items
+        const isMerchandise = titleLower.includes('poster') ||
+                             titleLower.includes('print') ||
+                             titleLower.includes('wall art') ||
+                             titleLower.includes('t-shirt') ||
+                             titleLower.includes('mug') ||
+                             titleLower.includes('vinyl') ||
+                             titleLower.includes('cd ') ||
+                             titleLower.includes('dvd') ||
+                             titleLower.includes('book');
 
-        if ((!songMatch && !artistMatch) || !isMusicFormat) {
+        if ((!songMatch && !artistMatch) || isMerchandise) {
+          console.log(`  ⏭️  Skipping non-music item: ${title.substring(0, 50)}...`);
           continue;
         }
 
-        // Try to get product link and navigate to product page
-        const productLink = resultElement.locator('h2 a').first();
-        const href = await productLink.getAttribute('href');
+        // Try to get product link with multiple selector patterns
+        const linkSelectors = [
+          'h2 a',
+          'a[href*="/dp/"]',
+          'a[href*="/gp/"]',
+          '.a-link-normal'
+        ];
         
-        if (!href) continue;
+        let href = '';
+        for (const linkSelector of linkSelectors) {
+          try {
+            const linkElement = resultElement.locator(linkSelector).first();
+            href = await linkElement.getAttribute('href', { timeout: 2000 }) || '';
+            if (href) {
+              console.log(`  🔗 Found link with "${linkSelector}": ${href.substring(0, 50)}...`);
+              break;
+            }
+          } catch (e) {
+            // Continue to next selector
+          }
+        }
+        
+        if (!href) {
+          console.log(`  ❌ No product link found for result ${i + 1}`);
+          continue;
+        }
 
         const productUrl = href.startsWith('http') ? href : `https://www.amazon.com${href}`;
         console.log(`  🔗 Navigating to product page: ${productUrl}`);
@@ -142,18 +251,108 @@ export class AmazonMusicScraper {
         await this.page.goto(productUrl, { waitUntil: 'networkidle' });
         await this.page.waitForTimeout(1000);
 
-        // Look for track price on product page
-        const priceSelectors = [
-          '#priceblock_dealprice',
-          '#priceblock_ourprice',
-          '.a-price.a-text-price.a-size-medium.apexPriceToPay .a-offscreen',
-          '#tmm-grid-swatch-DOWNLOADABLE_MUSIC_TRACK .a-price .a-offscreen',
-          '.a-button-selected .a-button-text .a-price .a-offscreen',
+        // Debug: Check product page
+        console.log(`  📄 Product page title: ${await this.page.title()}`);
+        await this.page.screenshot({ path: `debug-product-${Date.now()}.png` });
+
+        // Look for the three dots menu button that contains MP3 purchase options
+        console.log(`  🔍 Looking for track menu (three dots) button...`);
+        
+        const menuButtonSelectors = [
+          'button[aria-label*="More options"]',
+          'button[aria-label*="menu"]',
+          'button[data-testid*="menu"]',
+          'button[title*="More"]',
+          '[role="button"][aria-haspopup="menu"]',
+          'button:has-text("⋯")',
+          'button:has-text("...")',
+          '.track-menu-button',
+          '[data-testid*="track-menu"]'
+        ];
+
+        let foundMenuButton = false;
+        for (const selector of menuButtonSelectors) {
+          try {
+            const menuElements = this.page.locator(selector);
+            const count = await menuElements.count();
+            console.log(`  📋 Found ${count} elements with selector: ${selector}`);
+            
+            if (count > 0) {
+              // Look for the menu button near our target track
+              for (let i = 0; i < count; i++) {
+                const menuElement = menuElements.nth(i);
+                if (await menuElement.isVisible({ timeout: 1000 })) {
+                  console.log(`  🎯 Clicking menu button ${i + 1}...`);
+                  await menuElement.click();
+                  await this.page.waitForTimeout(1000);
+                  
+                  // Look for "Buy MP3 song" option in the opened menu
+                  const buyMp3Selectors = [
+                    'text="Buy MP3 song"',
+                    'text="Buy MP3 album"',
+                    '[data-testid*="buy-mp3"]',
+                    'a:has-text("Buy MP3")',
+                    'button:has-text("Buy MP3")',
+                    '[aria-label*="Buy MP3"]'
+                  ];
+                  
+                  let foundBuyOption = false;
+                  for (const buySelector of buyMp3Selectors) {
+                    try {
+                      const buyOption = this.page.locator(buySelector).first();
+                      if (await buyOption.isVisible({ timeout: 2000 })) {
+                        console.log(`  💰 Found "Buy MP3" option with: ${buySelector}`);
+                        await buyOption.click();
+                        await this.page.waitForTimeout(2000);
+                        foundBuyOption = true;
+                        foundMenuButton = true;
+                        break;
+                      }
+                    } catch (e) {
+                      // Continue to next buy selector
+                    }
+                  }
+                  
+                  if (foundBuyOption) break;
+                  
+                  // Close menu if no buy option found
+                  await this.page.keyboard.press('Escape');
+                  await this.page.waitForTimeout(500);
+                }
+              }
+              
+              if (foundMenuButton) break;
+            }
+          } catch (e) {
+            // Continue to next menu selector
+          }
+        }
+
+        if (!foundMenuButton) {
+          console.log(`  ❌ No menu button found with MP3 purchase option`);
+        }
+
+        // After clicking "Buy MP3", look for the price in the purchase modal
+        const modalPriceSelectors = [
+          'text*="Order total:"',
+          'text*="$"',
+          '[data-testid*="price"]',
+          '.order-total',
+          '.price',
+          '.total-price',
+          // From your screenshot: "Order total: $1.29"
+          'text*="Order total: $"',
+          // Look for the price pattern in any text element
+          'text=/\\$\\d+\\.\\d{2}/',
+          // General price selectors
           '.a-price .a-offscreen',
+          '.a-price-whole',
+          '#order-total',
+          '[aria-label*="total"]'
         ];
 
         let priceFound = false;
-        for (const selector of priceSelectors) {
+        for (const selector of modalPriceSelectors) {
           try {
             const priceElement = this.page.locator(selector).first();
             if (await priceElement.isVisible({ timeout: 1000 })) {
@@ -209,7 +408,13 @@ export class AmazonMusicScraper {
             // Continue
           }
 
-          break; // Found price, exit loop
+          // Successfully found price, return immediately
+          return result;
+        } else {
+          // No price found on this product page, but we've navigated away from search
+          // Need to either go back or try different approach
+          console.log(`  ❌ No price found on product page for result ${i + 1}`);
+          break; // Exit the search results loop since we can't continue checking other results
         }
       }
 

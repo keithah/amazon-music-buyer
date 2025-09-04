@@ -466,7 +466,13 @@ func main() {
 		}
 		
 		// Build command for Playwright pricing service
-		cmd := []string{"npm", "run", "dev", "--", "analyze", "-i", *csvFile}
+		// Convert relative path to absolute path from pricing-service directory
+		csvPath := *csvFile
+		if !strings.HasPrefix(csvPath, "/") {
+			// If it's a relative path, make it relative to parent directory
+			csvPath = "../" + csvPath
+		}
+		cmd := []string{"npm", "run", "dev", "--", "analyze", "-i", csvPath}
 		
 		if !*headless {
 			cmd = append(cmd, "--visible")
