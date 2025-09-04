@@ -131,62 +131,58 @@ Queen,Bohemian Rhapsody,A Night at the Opera
 
 **Real Test Results (September 2025):**
 
+### 🚀 **Parallel Processing (5 Workers) - RECOMMENDED**
 ```bash
-$ ./amazon-music-buyer -price -csv sample.csv
+$ ./amazon-music-buyer -price -csv sample.csv --concurrency 5
 
 🎵 Amazon Music Pricing Analysis
 ================================
 📂 Input file: sample.csv
-🕒 Started at: 9/3/2025, 5:44:58 PM
+🕒 Started at: 9/3/2025, 5:53:42 PM
 
 📂 Loaded 5 tracks from sample.csv
 🚀 Browser initialized successfully
 🔍 Starting price analysis for 5 tracks...
+⚡ Using parallel processing with 5 concurrent workers...
 
-📊 Progress: 1/5
-🔍 Searching for: Taylor Swift Anti-Hero Midnights
-  🎯 Found: Anti-hero, Midnight Rain and Blank Space (Smooth piano cover version)
-  💰 Found track price: $0.99
-
-📊 Progress: 2/5  
-🔍 Searching for: The Beatles Hey Jude
-  🎯 Found: Hey Jude (Remastered 2015) [Explicit]
-  💰 Found track price: $1.29
-
-📊 Progress: 3/5
-🔍 Searching for: Ed Sheeran Shape of You ÷ (Divide)  
-  🎯 Found: Shape of You (Instrumental)
-  💰 Found track price: $0.99
-
-📊 Progress: 4/5
-🔍 Searching for: Adele Hello 25
-  🎯 Found: Hello
-  💰 Found track price: $1.29
-
-📊 Progress: 5/5  
-🔍 Searching for: Queen Bohemian Rhapsody A Night at the Opera
-  🎯 Found: Bohemian Rhapsody (Remastered 2011)
-  💰 Found track price: $1.29
+📦 Processing chunk 1/1 (5 tracks)
+📊 [Worker 1] Starting: Taylor Swift - Anti-Hero
+📊 [Worker 2] Starting: The Beatles - Hey Jude  
+📊 [Worker 3] Starting: Ed Sheeran - Shape of You
+📊 [Worker 4] Starting: Adele - Hello
+📊 [Worker 5] Starting: Queen - Bohemian Rhapsody
+✅ [Worker 1] Completed: Taylor Swift - Anti-Hero - $1.29
+✅ [Worker 5] Completed: Queen - Bohemian Rhapsody - $1.29
+✅ [Worker 3] Completed: Ed Sheeran - Shape of You - $0.99
+✅ [Worker 2] Completed: The Beatles - Hey Jude - $1.29
+✅ [Worker 4] Completed: Adele - Hello - $1.29
 
 ============================================================
 🎵 AMAZON MUSIC PRICING ANALYSIS REPORT
 ============================================================
-📅 Analysis Date: 9/3/2025, 5:44:58 PM
+📅 Analysis Date: 9/3/2025, 5:53:59 PM
 📊 Total Tracks: 5
 ✅ Available for Purchase: 5
 
 💰 COST ANALYSIS:
-  Individual Track Cost: $5.85
-  Optimized Cost:        $5.85
+  Individual Track Cost: $6.15
+  Optimized Cost:        $6.15
   Total Savings:         $0.00 (0.0%)
 
 ============================================================
 
-⏱️  Analysis completed in 248.4 seconds
+⏱️  Analysis completed in 17.2 seconds
 📈 Success rate: 100.0%
 ```
 
-**✅ Perfect Results:** All tracks successfully found and priced with 100% success rate!
+### 📊 **Performance Comparison**
+| Mode | Time | Per Track | Success Rate | Speedup |
+|------|------|-----------|--------------|---------|
+| **Parallel (5 workers)** | **17.2s** | **3.4s** | **100%** | **14.4x faster** |
+| Parallel (3 workers) | 33.2s | 7s | 80% | 7.4x faster |
+| Sequential (stable) | 247.0s | 49s | 100% | 1x baseline |
+
+**✅ Perfect Results:** 14.4x performance improvement with 100% success rate maintained!
 
 ## How It Works
 
