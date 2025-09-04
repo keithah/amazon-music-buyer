@@ -23,6 +23,8 @@ program
   .option('--visible', 'Run browser in visible mode (for debugging)')
   .option('-d, --delay <ms>', 'Delay between requests in milliseconds', '3000')
   .option('-r, --retries <count>', 'Maximum retry attempts', '3')
+  .option('--concurrency <count>', 'Number of concurrent scrapers (1-5)', '3')
+  .option('--sequential', 'Use sequential processing (slower but more stable)')
   .action(async (options) => {
     const startTime = Date.now();
     
@@ -55,7 +57,16 @@ program
 
       // Scrape pricing information
       console.log(`🔍 Starting price analysis for ${musicItems.length} tracks...`);
-      const priceResults = await scraper.searchMultipleTracks(musicItems);
+      
+      let priceResults;
+      if (options.sequential) {
+        console.log('🔄 Using sequential processing for maximum stability...');
+        priceResults = await scraper.searchMultipleTracksSequential(musicItems);
+      } else {
+        const concurrency = Math.max(1, Math.min(5, parseInt(options.concurrency || '3')));
+        console.log(`⚡ Using parallel processing with ${concurrency} concurrent workers...`);
+        priceResults = await scraper.searchMultipleTracks(musicItems, concurrency);
+      }
 
       // Analyze results
       const report = PricingAnalyzer.analyzePricing(priceResults);
