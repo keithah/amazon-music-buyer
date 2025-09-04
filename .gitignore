@@ -1,0 +1,39 @@
+# Binaries
+amazon-music-buyer
+*.exe
+
+# Config files with credentials
+config.json
+.env
+
+# Session/cookie files
+amazon_cookies.json
+*.cookies
+*.session
+
+# Go dependencies
+vendor/
+
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Log files
+*.log
+
+# Reports
+report.json
+report.csv
+pricing-report.*
